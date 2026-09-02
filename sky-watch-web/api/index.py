@@ -1,15 +1,13 @@
-"""Sky Watch — Vercel Python (no Flask, direct dict response).
+"""Sky Watch — Vercel Python with WSGI wrapper.
 
-Vercel Python runtime natively supports handler functions that return a dict:
-    def handler(request) -> dict:
-        return {"statusCode": 200, "headers": {...}, "body": "..."}
-
-This is simpler and more reliable than Flask on Vercel.
+Vercel Python runtime supports WSGI apps (callable(environ, start_response)).
+We wrap our handler in a minimal WSGI app.
 """
 import json
 import sys
 from datetime import date
 from pathlib import Path
+from urllib.parse import parse_qs, unquote
 
 # Add api directory to path for skywatch import
 sys.path.insert(0, str(Path(__file__).parent))
@@ -177,6 +175,39 @@ def handler(request):
     }
 
 
+def wsgi_app(environ, start_response):
+    """WSGI wrapper around our handler. Vercel Python supports this."""
+    # Build a simple request-like object from environ
+    class Req:
+        def __init__(self):
+            self.path = environ.get("PATH_INFO", "/")
+            self.method = environ.get("REQUEST_METHOD", "GET")
+            qs = environ.get("QUERY_STRING", "")
+            self.args = {}
+            if qs:
+                parsed = parse_qs(qs)
+                for k, v in parsed.items():
+                    self.args[k] = v[0] if v else ""
+            # Get body for POST
+            try:
+                length = int(environ.get("CONTENT_LENGTH", 0))
+            except (ValueError, TypeError):
+                length = 0
+            self.body = environ["wsgi.input"].read(length) if length else b""
+
+    req = Req()
+    result = handler(req)
+
+    status = str(result.get("statusCode", 200))
+    headers = result.get("headers", {})
+    body = result.get("body", "")
+    if isinstance(body, str):
+        body = body.encode("utf-8")
+
+    start_response(status, list(headers.items()))
+    return [body]
+
+
 # Vercel Python looks for top-level "app" or "application" or "handler"
-app = handler
-application = handler
+app = wsgi_app
+application = wsgi_app
