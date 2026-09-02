@@ -23,8 +23,5 @@
       "src": "/api/skywatch",
       "dest": "api/index.py"
     }
-  ],
-  "env": {
-    "NASA_API_KEY": "@nasa_api_key"
-  }
+  ]
 }
