@@ -5,5 +5,10 @@
       "src": "api/index.py",
       "use": "@vercel/python"
     }
+  ],
+  "routes": [
+    { "src": "/", "dest": "api/index.py" },
+    { "src": "/watch", "dest": "api/index.py" },
+    { "src": "/json", "dest": "api/index.py" }
   ]
 }

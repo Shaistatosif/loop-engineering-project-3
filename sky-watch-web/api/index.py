@@ -1,17 +1,22 @@
-"""Sky Watch — Vercel Python with Flask."""
+"""Sky Watch — Vercel Python (no Flask, direct dict response).
+
+Vercel Python runtime natively supports handler functions that return a dict:
+    def handler(request) -> dict:
+        return {"statusCode": 200, "headers": {...}, "body": "..."}
+
+This is simpler and more reliable than Flask on Vercel.
+"""
 import json
-import os
 import sys
 from datetime import date
 from pathlib import Path
 
 # Add api directory to path for skywatch import
 sys.path.insert(0, str(Path(__file__).parent))
-
 import skywatch
-from flask import Flask, request, Response
 
-app = Flask(__name__)
+
+# --- HTML templates ---
 
 LANDING = """<!DOCTYPE html>
 <html lang="en">
@@ -60,59 +65,113 @@ code{background:#11151c;border:1px solid #1f2733;padding:2px 6px;border-radius:4
 </body>
 </html>"""
 
-@app.route("/")
-def home():
-    return Response(LANDING.format(today=date.today().isoformat()), mimetype="text/html")
-
-@app.route("/watch")
-def watch():
-    try:
-        days = min(7, max(1, int(request.args.get("days", 7))))
-    except (ValueError, TypeError):
-        days = 7
-
-    fmt = request.args.get("format", "")
-
-    try:
-        feed = skywatch.fetch(days)
-        if "error" in feed:
-            return Response(f"NASA Error: {feed['error']}", status=502, mimetype="text/plain")
-
-        rows = skywatch.rows(feed, days)
-        card = skywatch.card(rows, days)
-
-        if fmt == "json":
-            return Response(json.dumps({"days": days, "rows": rows}, indent=2), mimetype="application/json")
-        elif fmt == "card":
-            return Response(card, mimetype="text/plain")
-
-        html = f"""<!DOCTYPE html>
+WATCH_HTML = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"/><title>Sky Watch</title>
 <style>body{{background:#0a0d12;color:#e7ecf5;font-family:monospace;font-size:14px;padding:24px}}
 a{{color:#8a94a6;text-decoration:none;padding:6px 12px;border:1px solid #1f2733;border-radius:6px}}
 pre{{background:#11151c;border:1px solid #1f2733;padding:16px;border-radius:8px;white-space:pre-wrap}}
 </style></head>
 <body><a href="/">Home</a><pre>{card}</pre></body></html>"""
-        return Response(html, mimetype="text/html")
 
-    except SystemExit:
-        return Response("Watch failed - NASA API unavailable", status=502, mimetype="text/plain")
-    except Exception as e:
-        return Response(f"Error: {str(e)}", status=500, mimetype="text/plain")
 
-@app.route("/json")
-def json_data():
+def parse_days(query):
+    """Parse days param, default 7, range 1-7."""
     try:
-        days = min(7, max(1, int(request.args.get("days", 7))))
+        return min(7, max(1, int(query.get("days", "7"))))
     except (ValueError, TypeError):
-        days = 7
+        return 7
 
-    try:
-        feed = skywatch.fetch(days)
-        rows = skywatch.rows(feed, days)
-        return Response(json.dumps({"days": days, "as_of": date.today().isoformat(), "rows": rows}, indent=2),
-                       mimetype="application/json")
-    except SystemExit:
-        return Response('{"error": "NASA API unavailable"}', status=502, mimetype="application/json")
-    except Exception as e:
-        return Response(json.dumps({"error": str(e)}), status=500, mimetype="application/json")
+
+def handler(request):
+    """Main entry point — Vercel Python calls this with a Request object."""
+    path = request.path
+    query = request.args
+
+    # Get params
+    days = parse_days(query)
+    fmt = query.get("format", "")
+
+    # Route: /
+    if path == "/":
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "text/html; charset=utf-8"},
+            "body": LANDING.format(today=date.today().isoformat())
+        }
+
+    # Route: /watch
+    if path == "/watch":
+        try:
+            feed = skywatch.fetch(days)
+            if "error" in feed:
+                return {
+                    "statusCode": 502,
+                    "headers": {"Content-Type": "text/plain"},
+                    "body": f"NASA Error: {feed['error']}"
+                }
+
+            rows = skywatch.rows(feed, days)
+            card = skywatch.card(rows, days)
+
+            if fmt == "json":
+                return {
+                    "statusCode": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"days": days, "rows": rows}, indent=2)
+                }
+            elif fmt == "card":
+                return {
+                    "statusCode": 200,
+                    "headers": {"Content-Type": "text/plain; charset=utf-8"},
+                    "body": card
+                }
+
+            # Default: HTML page
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "text/html; charset=utf-8"},
+                "body": WATCH_HTML.format(card=card)
+            }
+
+        except SystemExit:
+            return {
+                "statusCode": 502,
+                "headers": {"Content-Type": "text/plain"},
+                "body": "Watch failed - NASA API unavailable"
+            }
+        except Exception as e:
+            return {
+                "statusCode": 500,
+                "headers": {"Content-Type": "text/plain"},
+                "body": f"Error: {str(e)}"
+            }
+
+    # Route: /json
+    if path == "/json":
+        try:
+            feed = skywatch.fetch(days)
+            rows = skywatch.rows(feed, days)
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"days": days, "as_of": date.today().isoformat(), "rows": rows}, indent=2)
+            }
+        except SystemExit:
+            return {
+                "statusCode": 502,
+                "headers": {"Content-Type": "application/json"},
+                "body": '{"error": "NASA API unavailable"}'
+            }
+        except Exception as e:
+            return {
+                "statusCode": 500,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"error": str(e)})
+            }
+
+    # 404: Not found
+    return {
+        "statusCode": 404,
+        "headers": {"Content-Type": "text/plain"},
+        "body": f"Not found: {path}"
+    }
