@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Sky Watch — Live Forecast</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0d12;color:#e7ecf5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.55;min-height:100vh}
+  .wrap{max-width:600px;margin:0 auto;padding:24px}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .head a{color:#8a94a6;text-decoration:none;font-size:13px;border:1px solid #1f2733;padding:6px 12px;border-radius:6px}
+  .head a:hover{color:#e7ecf5;border-color:#2a3441}
+  pre.card{background:#11151c;border:1px solid #1f2733;border-radius:8px;padding:14px 16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:#c7cede;white-space:pre-wrap;overflow-x:auto;margin:0 0 18px}
+  .meta{color:#6a7484;font-size:12px;margin-top:18px;text-align:center}
+  .meta strong{color:#c7cede}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <a href="/">← Back</a>
+    <a href="/watch?days={{ days }}&format=json">View as JSON</a>
+  </div>
+  <pre class="card">{{ card }}</pre>
+  <div style="margin-top:24px">
+    {{ html_card | safe }}
+  </div>
+  <div class="meta">
+    Window: <strong>{{ days }} day{{ "" if days == 1 else "s" }}</strong> ·
+    {{ n_rows }} close approaches ·
+    As of <strong>{{ today }}</strong> ·
+    Data: NASA NeoWs
+  </div>
+</div>
+</body>
+</html>

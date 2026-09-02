@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/watch",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/json",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/api/skywatch",
+      "dest": "api/index.py"
+    }
+  ],
+  "env": {
+    "NASA_API_KEY": "@nasa_api_key"
+  }
+}
