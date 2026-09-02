@@ -37,7 +37,6 @@ LANDING_PAGE = """<!doctype html>
   li{padding:6px 0;color:#c7cede;font-size:14px}
   li code{background:#11151c;border:1px solid #1f2733;padding:2px 6px;border-radius:4px;color:#ffb3a6;font-size:12.5px}
   .meta{color:#6a7484;font-size:12.5px;margin-top:32px;border-top:1px solid #1f2733;padding-top:18px}
-  .error{background:#3a1512;border:1px solid #e0533d;color:#ffb3a6;padding:14px;border-radius:8px;margin:18px 0}
 </style>
 </head>
 <body>
@@ -71,17 +70,23 @@ LANDING_PAGE = """<!doctype html>
 </html>"""
 
 
+def get_path():
+    """Get the clean path, stripping /api/index or /api/ prefix if present."""
+    path = request.path
+    # Strip the /api/index or /api prefix that Vercel rewrites add
+    if path.startswith("/api/index"):
+        path = path[len("/api/index"):] or "/"
+    elif path.startswith("/api/"):
+        path = path[len("/api/"):]
+    return path
+
+
 @app.route("/")
-def landing():
-    return Response(
-        LANDING_PAGE.format(today=date.today().isoformat()),
-        mimetype="text/html; charset=utf-8"
-    )
-
-
-@app.route("/watch")
-def watch():
+@app.route("/<path:subpath>")
+def catch_all(subpath=None):
+    path = get_path()
     days_arg = request.args.get("days", "7")
+
     try:
         days = min(7, max(1, int(days_arg)))
     except (ValueError, TypeError):
@@ -89,56 +94,61 @@ def watch():
 
     fmt = request.args.get("format", "")
 
-    try:
-        feed = skywatch.fetch(days)
-        if "error" in feed:
-            return Response(f"NASA Error: {feed['error']}", status=502, mimetype="text/plain")
-        rows = skywatch.rows(feed, days)
-        card_text = skywatch.card(rows, days)
+    # Home page
+    if path == "/" or path == "":
+        return Response(
+            LANDING_PAGE.format(today=date.today().isoformat()),
+            mimetype="text/html; charset=utf-8"
+        )
 
-        if fmt == "json":
-            return Response(json.dumps({"days": days, "rows": rows}, indent=2),
-                          mimetype="application/json")
-        elif fmt == "card":
-            return Response(card_text, mimetype="text/plain; charset=utf-8")
+    # Watch endpoint
+    if path == "watch":
+        try:
+            feed = skywatch.fetch(days)
+            if "error" in feed:
+                return Response(f"NASA Error: {feed['error']}", status=502, mimetype="text/plain")
+            rows = skywatch.rows(feed, days)
+            card_text = skywatch.card(rows, days)
 
-        return Response(f"""<!doctype html>
+            if fmt == "json":
+                return Response(json.dumps({"days": days, "rows": rows}, indent=2),
+                              mimetype="application/json")
+            elif fmt == "card":
+                return Response(card_text, mimetype="text/plain; charset=utf-8")
+
+            return Response(f"""<!doctype html>
 <html><head><meta charset="utf-8"/><title>Sky Watch</title>
 <style>body{{background:#0a0d12;color:#e7ecf5;font-family:monospace;font-size:14px;padding:24px}}
-a{{color:#8a94a6}}pre{{background:#11151c;border:1px solid #1f2733;padding:16px;border-radius:8px;white-space:pre-wrap}}
+a{{color:#8a94a6;text-decoration:none}}pre{{background:#11151c;border:1px solid #1f2733;padding:16px;border-radius:8px;white-space:pre-wrap}}
 .meta{{color:#6a7484;font-size:12px;margin-top:16px}}</style></head>
 <body><a href="/">← Home</a><pre>{card_text}</pre>
 <div class="meta">NASA NeoWs · {date.today().isoformat()}</div></body></html>""",
-                       mimetype="text/html; charset=utf-8")
+                           mimetype="text/html; charset=utf-8")
 
-    except SystemExit as e:
-        return Response(f"Watch failed (code {e.code})", status=502, mimetype="text/plain")
-    except Exception as ex:
-        return Response(f"Error: {ex}", status=500, mimetype="text/plain")
+        except SystemExit as e:
+            return Response(f"Watch failed (code {e.code})", status=502, mimetype="text/plain")
+        except Exception as ex:
+            return Response(f"Error: {ex}", status=500, mimetype="text/plain")
 
+    # JSON endpoint
+    if path == "json":
+        try:
+            feed = skywatch.fetch(days)
+            rows = skywatch.rows(feed, days)
+            return Response(
+                json.dumps({"days": days, "as_of": date.today().isoformat(), "rows": rows}, indent=2),
+                mimetype="application/json"
+            )
+        except SystemExit as e:
+            return Response(json.dumps({"error": f"failed (code {e.code})"}),
+                          status=502, mimetype="application/json")
+        except Exception as ex:
+            return Response(json.dumps({"error": str(ex)}),
+                          status=500, mimetype="application/json")
 
-@app.route("/json")
-def json_endpoint():
-    days_arg = request.args.get("days", "7")
-    try:
-        days = min(7, max(1, int(days_arg)))
-    except (ValueError, TypeError):
-        days = 7
-
-    try:
-        feed = skywatch.fetch(days)
-        rows = skywatch.rows(feed, days)
-        return Response(
-            json.dumps({"days": days, "as_of": date.today().isoformat(), "rows": rows}, indent=2),
-            mimetype="application/json"
-        )
-    except SystemExit as e:
-        return Response(json.dumps({"error": f"failed (code {e.code})"}),
-                      status=502, mimetype="application/json")
-    except Exception as ex:
-        return Response(json.dumps({"error": str(ex)}),
-                      status=500, mimetype="application/json")
+    # 404
+    return Response(f"Page not found: {path}", status=404, mimetype="text/plain")
 
 
-# Vercel export - both names work
+# Vercel export
 handler = app
