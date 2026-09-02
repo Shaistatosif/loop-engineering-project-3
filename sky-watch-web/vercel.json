@@ -5,23 +5,5 @@
       "src": "api/index.py",
       "use": "@vercel/python"
     }
-  ],
-  "rewrites": [
-    {
-      "source": "/",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/watch",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/json",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/index"
-    }
   ]
 }
