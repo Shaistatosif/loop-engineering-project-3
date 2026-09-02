@@ -175,3 +175,8 @@ def handler(request):
         "headers": {"Content-Type": "text/plain"},
         "body": f"Not found: {path}"
     }
+
+
+# Vercel Python looks for top-level "app" or "application" or "handler"
+app = handler
+application = handler
