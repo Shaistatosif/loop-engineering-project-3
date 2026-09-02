@@ -1,143 +1,176 @@
-"""Sky Watch — Vercel serverless function.
-
-A Flask app that wraps the skywatch.py script and exposes it on the web:
-  GET /              → beautiful landing page explaining the project
-  GET /watch         → the live forecast (text card)
-  GET /watch?days=1  → a shorter window
-  GET /json          → raw data as JSON
-  GET /api/skywatch  → API endpoint returning JSON
-
-Reads NASA_API_KEY from the Vercel environment (optional — falls back to DEMO_KEY).
+"""Sky Watch — Vercel serverless API.
+Handles GET / and /watch routes.
 """
 import json
-import os
 import sys
 from datetime import date
 from pathlib import Path
 
-# Bring the bundled skywatch.py into scope. Vercel sets the working directory
-# to the project root, so we add the repo's skills folder to sys.path.
-SKILL_SCRIPT = Path(__file__).resolve().parent.parent.parent / \
-    "crash-course" / "loop-eng" / "sky-watch" / ".claude" / "skills" / \
-    "sky-watch" / "scripts" / "skywatch.py"
+# Import skywatch functions
+sys.path.insert(0, str(Path(__file__).parent))
+import skywatch
 
-# If the bundled script is missing (e.g. running a slim deploy), use a local copy.
-if not SKILL_SCRIPT.exists():
-    SKILL_SCRIPT = Path(__file__).resolve().parent / "skywatch.py"
+# Simple template placeholders
+LANDING_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Sky Watch — Near-Earth Asteroids, Live</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0d12;color:#e7ecf5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.55;min-height:100vh}
+  .wrap{max-width:720px;margin:0 auto;padding:48px 24px}
+  .badge{display:inline-block;background:#1b2330;color:#8a94a6;font-size:11px;letter-spacing:1.2px;padding:4px 10px;border-radius:999px;text-transform:uppercase}
+  h1{font-size:38px;letter-spacing:-.5px;margin:14px 0 6px;line-height:1.15}
+  h1 .comet{color:#e0863d}
+  p.lead{color:#c7cede;font-size:17px;margin:14px 0 28px}
+  .card{background:#11151c;border:1px solid #1f2733;border-radius:12px;padding:22px;margin:18px 0}
+  .card h2{font-size:15px;color:#8a94a6;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;font-weight:600}
+  .row{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 6px}
+  a.btn{display:inline-block;background:#e0863d;color:#0a0d12;font-weight:600;text-decoration:none;padding:11px 18px;border-radius:8px;font-size:14px;transition:transform .1s}
+  a.btn:hover{transform:translateY(-1px)}
+  a.btn.ghost{background:transparent;color:#e7ecf5;border:1px solid #2a3441}
+  ul{list-style:none;margin-top:8px}
+  li{padding:6px 0;color:#c7cede;font-size:14px;display:flex;gap:10px}
+  li code{background:#11151c;border:1px solid #1f2733;padding:2px 6px;border-radius:4px;color:#ffb3a6;font-size:12.5px;white-space:nowrap}
+  .meta{color:#6a7484;font-size:12.5px;margin-top:32px;border-top:1px solid #1f2733;padding-top:18px}
+  .meta a{color:#8a94a6;text-decoration:underline;text-decoration-color:#2a3441}
+  .error{background:#3a1512;border:1px solid #e0533d;color:#ffb3a6;padding:14px;border-radius:8px;margin:18px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="badge">☄ Loop Engineering · Concept 6</span>
+  <h1><span class="comet">☄</span> Sky Watch</h1>
+  <p class="lead">A forward-looking asteroid watch, live from NASA's near-Earth object feed. Which rocks are passing in the next 7 days, which is closest, and whether any of them are worth worrying about.</p>
 
-sys.path.insert(0, str(SKILL_SCRIPT.parent))
+  <div class="card">
+    <h2>Live forecast</h2>
+    <p style="color:#c7cede;font-size:14px">Open the watch — the card is rebuilt on every request from NASA's feed. No caching, no guessing.</p>
+    <div class="row">
+      <a class="btn" href="/watch">Open the 7-day watch →</a>
+      <a class="btn ghost" href="/watch?days=1">Today only</a>
+      <a class="btn ghost" href="/json">Raw JSON</a>
+    </div>
+  </div>
 
-# Import the functions we need from the existing script — do not reimplement.
-import skywatch  # type: ignore  # noqa: E402
+  <div class="card">
+    <h2>What this is</h2>
+    <p style="color:#c7cede;font-size:14px">A scheduled <em>watch</em> — a loop that runs on a clock and reports the sky for the days ahead, not after a pass has already happened. Most mornings it will say <strong style="color:#8fe0b0">all clear</strong>; on the rare day it matters, it leads with the warning.</p>
+  </div>
 
-from flask import Flask, Response, request  # noqa: E402
+  <div class="card">
+    <h2>API</h2>
+    <ul>
+      <li><code>GET /watch</code> — the 7-day watch (HTML card)</li>
+      <li><code>GET /watch?days=1</code> — a shorter window (1–7)</li>
+      <li><code>GET /watch?format=json</code> — JSON for downstream tools</li>
+      <li><code>GET /json</code> — raw rows as JSON</li>
+    </ul>
+  </div>
 
-app = Flask(__name__, template_folder="../templates", static_folder="../static")
+  <div class="meta">
+    Today is <strong style="color:#c7cede">{today}</strong>. Data source: NASA NeoWs (api.nasa.gov). Deployment: Vercel · Serverless Python.
+  </div>
+</div>
+</body>
+</html>"""
+
+WATCH_PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Sky Watch — Live Forecast</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#0a0d12;color:#e7ecf5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;min-height:100vh;padding:24px}}
+  a{{color:#8a94a6;text-decoration:none;padding:6px 12px;border:1px solid #1f2733;border-radius:6px;font-size:13px}}
+  a:hover{{color:#e7ecf5;border-color:#2a3441}}
+  .header{{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}}
+  pre{{background:#11151c;border:1px solid #1f2733;border-radius:8px;padding:16px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:#c7cede;white-space:pre-wrap;overflow-x:auto}}
+  .meta{{color:#6a7484;font-size:12px;margin-top:18px;text-align:center}}
+  .error{{background:#3a1512;border:1px solid #e0533d;color:#ffb3a6;padding:16px;border-radius:8px}}
+</style>
+</head>
+<body>
+<div class="header">
+  <a href="/">← Back to home</a>
+  <a href="/json">View JSON</a>
+</div>
+{content}
+<div class="meta">Data from NASA NeoWs · {today}</div>
+</body>
+</html>"""
+
+ERROR_PAGE = """<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"/><title>Error</title></head>
+<body style="background:#0a0d12;color:#ffb3a6;font-family:sans-serif;padding:48px;text-align:center">
+<h1>⚠ Watch Error</h1>
+<div class="error">{error}</div>
+<p><a href="/" style="color:#e0863d">← Back to home</a></p>
+</body>
+</html>"""
 
 
-@app.route("/")
-def landing():
-    """Serve the project landing page from templates/index.html."""
-    return _render_template("index.html", today=date.today().isoformat())
+def handler(request):
+    """Vercel Python handler - receives Werkzeug Request, returns Response tuple."""
+    path = request.path
+    query = request.query_params
 
-
-@app.route("/watch")
-def watch():
-    """The live watch card, rendered as a styled page."""
+    # Default to 7 days, allow 1-7
     try:
-        days = _parse_days(request.args.get("days"))
-    except ValueError as e:
-        return Response(str(e), status=400, mimetype="text/plain")
-    try:
-        feed = skywatch.fetch(days)
-        if "error" in feed:
-            return Response(
-                f"NASA returned an error: {feed['error']}\n"
-                "If this is a rate limit, set NASA_API_KEY in Vercel env.",
-                status=502,
-                mimetype="text/plain",
-            )
-        rows = skywatch.rows(feed, days)
-        card_text = skywatch.card(rows, days)
-        html_card = skywatch.html_card(rows, days)
-    except SystemExit as e:
-        return Response(f"Watch failed: code {e.code}", status=502,
-                        mimetype="text/plain")
+        days = min(7, max(1, int(query.get("days", "7"))))
+    except (ValueError, TypeError):
+        days = 7
 
-    fmt = request.args.get("format", "html")
-    if fmt == "json":
-        return Response(
-            json.dumps({"days": days, "rows": rows}, indent=2),
-            mimetype="application/json",
-        )
-    if fmt == "card":
-        return Response(card_text, mimetype="text/plain; charset=utf-8")
-    # default: embed the script's own HTML card into our page
-    return _render_template(
-        "watch.html",
-        days=days,
-        today=date.today().isoformat(),
-        card=card_text,
-        html_card=html_card,
-        n_rows=len(rows),
-    )
+    fmt = query.get("format", "")
 
+    if path == "/" or path == "":
+        html = LANDING_PAGE.format(today=date.today().isoformat())
+        return {"statusCode": 200, "headers": {"Content-Type": "text/html; charset=utf-8"}, "body": html}
 
-@app.route("/json")
-def json_endpoint():
-    return _json_data(_parse_days(request.args.get("days", "7")))
+    if path == "/watch" or path == "/api/watch":
+        try:
+            feed = skywatch.fetch(days)
+            if "error" in feed:
+                body = ERROR_PAGE.format(error=feed["error"])
+                return {"statusCode": 502, "headers": {"Content-Type": "text/html"}, "body": body}
 
+            rows = skywatch.rows(feed, days)
+            card_text = skywatch.card(rows, days)
 
-@app.route("/api/skywatch")
-def api_skywatch():
-    return _json_data(_parse_days(request.args.get("days", "7")))
+            if fmt == "json":
+                body = json.dumps({"days": days, "rows": rows}, indent=2)
+                return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": body}
+            elif fmt == "card":
+                return {"statusCode": 200, "headers": {"Content-Type": "text/plain; charset=utf-8"}, "body": card_text}
 
+            html = WATCH_PAGE.format(content="<pre>" + card_text + "</pre>", today=date.today().isoformat())
+            return {"statusCode": 200, "headers": {"Content-Type": "text/html; charset=utf-8"}, "body": html}
 
-# ---- helpers ------------------------------------------------------------
+        except SystemExit as e:
+            body = ERROR_PAGE.format(error=f"Watch failed (code {e.code}). NASA API may be unavailable.")
+            return {"statusCode": 502, "headers": {"Content-Type": "text/html"}, "body": body}
+        except Exception as ex:
+            body = ERROR_PAGE.format(error=str(ex))
+            return {"statusCode": 500, "headers": {"Content-Type": "text/html"}, "body": body}
 
-def _parse_days(raw):
-    if raw is None:
-        return 7
-    try:
-        n = int(raw)
-    except ValueError:
-        raise ValueError(f"--days needs a number, got {raw!r}")
-    if not 1 <= n <= 7:
-        raise ValueError(f"--days must be between 1 and 7, got {n}")
-    return n
+    if path == "/json" or path == "/api/json":
+        try:
+            feed = skywatch.fetch(days)
+            rows = skywatch.rows(feed, days)
+            body = json.dumps({"days": days, "as_of": date.today().isoformat(), "rows": rows}, indent=2)
+            return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": body}
+        except SystemExit as e:
+            body = json.dumps({"error": f"watch failed (code {e.code})"})
+            return {"statusCode": 502, "headers": {"Content-Type": "application/json"}, "body": body}
+        except Exception as ex:
+            body = json.dumps({"error": str(ex)})
+            return {"statusCode": 500, "headers": {"Content-Type": "application/json"}, "body": body}
 
-
-def _json_data(days):
-    try:
-        feed = skywatch.fetch(days)
-        if "error" in feed:
-            return Response(
-                json.dumps({"error": feed["error"]}, indent=2),
-                status=502,
-                mimetype="application/json",
-            )
-        rows = skywatch.rows(feed, days)
-        return Response(
-            json.dumps({"days": days, "as_of": date.today().isoformat(),
-                        "rows": rows}, indent=2),
-            mimetype="application/json",
-        )
-    except SystemExit as e:
-        return Response(
-            json.dumps({"error": f"watch failed (code {e.code})"}, indent=2),
-            status=502,
-            mimetype="application/json",
-        )
-
-
-def _render_template(name, **ctx):
-    """Tiny template loader — no Jinja needed for two pages."""
-    path = Path(app.template_folder) / name
-    html = path.read_text(encoding="utf-8")
-    for key, val in ctx.items():
-        html = html.replace("{{ " + key + " }}", str(val))
-    return Response(html, mimetype="text/html; charset=utf-8")
-
-
-# Vercel's Python runtime looks for `app` or a `handler` function.
-handler = app
+    # 404 for unknown paths
+    body = ERROR_PAGE.format(error="Page not found: " + path)
+    return {"statusCode": 404, "headers": {"Content-Type": "text/html"}, "body": body}

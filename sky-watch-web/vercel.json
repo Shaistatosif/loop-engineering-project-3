@@ -6,22 +6,22 @@
       "use": "@vercel/python"
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/",
-      "dest": "api/index.py"
+      "source": "/",
+      "destination": "/api/index"
     },
     {
-      "src": "/watch",
-      "dest": "api/index.py"
+      "source": "/watch",
+      "destination": "/api/index"
     },
     {
-      "src": "/json",
-      "dest": "api/index.py"
+      "source": "/json",
+      "destination": "/api/index"
     },
     {
-      "src": "/api/skywatch",
-      "dest": "api/index.py"
+      "source": "/api/(.*)",
+      "destination": "/api/index"
     }
   ]
 }
