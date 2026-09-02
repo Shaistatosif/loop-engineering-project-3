@@ -45,31 +45,31 @@ code{background:#11151c;border:1px solid #1f2733;padding:2px 6px;border-radius:4
 <p class="lead">Live asteroid watch from NASA's near-Earth object feed.</p>
 <div class="card">
 <div class="row">
-<a class="btn" href="/watch">7-day watch →</a>
+<a class="btn" href="/watch">7-day watch &rarr;</a>
 <a class="btn ghost" href="/watch?days=1">Today</a>
 <a class="btn ghost" href="/json">JSON</a>
 </div>
 </div>
 <div class="card">
 <ul>
-<li><code>GET /watch</code> — 7-day forecast</li>
-<li><code>GET /watch?days=1</code> — Today only</li>
-<li><code>GET /watch?format=json</code> — JSON data</li>
-<li><code>GET /json</code> — Raw JSON</li>
+<li><code>GET /watch</code> &mdash; 7-day forecast</li>
+<li><code>GET /watch?days=1</code> &mdash; Today only</li>
+<li><code>GET /watch?format=json</code> &mdash; JSON data</li>
+<li><code>GET /json</code> &mdash; Raw JSON</li>
 </ul>
 </div>
-<div class="meta">NASA NeoWs · {today}</div>
+<div class="meta">NASA NeoWs &middot; __TODAY__</div>
 </div>
 </body>
 </html>"""
 
 WATCH_HTML = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"/><title>Sky Watch</title>
-<style>body{{background:#0a0d12;color:#e7ecf5;font-family:monospace;font-size:14px;padding:24px}}
-a{{color:#8a94a6;text-decoration:none;padding:6px 12px;border:1px solid #1f2733;border-radius:6px}}
-pre{{background:#11151c;border:1px solid #1f2733;padding:16px;border-radius:8px;white-space:pre-wrap}}
+<style>body{background:#0a0d12;color:#e7ecf5;font-family:monospace;font-size:14px;padding:24px}
+a{color:#8a94a6;text-decoration:none;padding:6px 12px;border:1px solid #1f2733;border-radius:6px}
+pre{background:#11151c;border:1px solid #1f2733;padding:16px;border-radius:8px;white-space:pre-wrap}
 </style></head>
-<body><a href="/">Home</a><pre>{card}</pre></body></html>"""
+<body><a href="/">Home</a><pre>__CARD__</pre></body></html>"""
 
 
 def parse_days(query):
@@ -91,10 +91,11 @@ def handler(request):
 
     # Route: /
     if path == "/":
+        body = LANDING.replace("__TODAY__", date.today().isoformat())
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "text/html; charset=utf-8"},
-            "body": LANDING.format(today=date.today().isoformat())
+            "body": body
         }
 
     # Route: /watch
@@ -128,7 +129,7 @@ def handler(request):
             return {
                 "statusCode": 200,
                 "headers": {"Content-Type": "text/html; charset=utf-8"},
-                "body": WATCH_HTML.format(card=card)
+                "body": WATCH_HTML.replace("__CARD__", card)
             }
 
         except SystemExit:
