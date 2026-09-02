@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 from urllib.parse import parse_qs, unquote
 
-# Add api directory to path for skywatch import
+# Add current directory to path for skywatch import
 sys.path.insert(0, str(Path(__file__).parent))
 import skywatch
 
